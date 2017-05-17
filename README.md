@@ -4,11 +4,11 @@ Demo of face recognition with opencv 3 + python
 
 preparation
 
-> brew tap homebrew/science<br />
-> sudo easy_install pip<br />
-> [sudo]pip install --upgrade pip<br />
-> [sudo]pip install image<br />
-> [sudo]pip install pillow<br />
+> brew tap homebrew/science
+> sudo easy_install pip
+> [sudo]pip install --upgrade pip
+> [sudo]pip install image
+> [sudo]pip install pillow
 
 
 

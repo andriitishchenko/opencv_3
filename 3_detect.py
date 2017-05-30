@@ -19,7 +19,9 @@ while True:
             if(Id==1):
                 Id="Andrii"
             elif(Id==2):
-                Id="Sasha"
+                Id="Andrey"
+            elif(Id==4):
+                Id="Yeva"
         else:
             Id="??"        
         cv2.putText(im, str(Id),(x, y+h), font, 4,(255,255,255),2, cv2.LINE_AA)

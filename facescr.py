@@ -21,18 +21,10 @@ from common import clock, draw_str
 from mss import mss
 from PIL import Image
 import io
-
-# mon = {'top': 160, 'left': 160, 'width': 200, 'height': 200}
-# sct = mss()
-# while 1:
-#     sct.get_pixels(mon)
-#     img = Image.frombytes('RGB', (sct.width, sct.height), sct.image)
-#     cv2.imshow('test', np.array(img))
-#     if cv2.waitKey(25) & 0xFF == ord('q'):
-#         cv2.destroyAllWindows()
-#         break
+# http://answers.opencv.org/question/19763/storing-opencv-image-in-sqlite3-with-python/
 
 dbfilepath = "scrshut/trainner.yml"
+untitledpath = "scrshut/untitled/"
 
 def detect(img, cascade):
     rects = cascade.detectMultiScale(img, scaleFactor=1.3, minNeighbors=4, minSize=(30, 30),

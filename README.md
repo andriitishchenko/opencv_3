@@ -1,8 +1,9 @@
 # opencv_3
 Demo of face recognition with opencv 3 + python
 
-
 preparation
+
+https://www.learnopencv.com/install-opencv-3-on-yosemite-osx-10-10-x/
 
 > brew tap homebrew/science
 > sudo easy_install pip

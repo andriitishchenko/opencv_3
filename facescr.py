@@ -109,11 +109,14 @@ if __name__ == '__main__':
                     Id="D.Serega"
                 elif(Id==1496186730):
                     Id="M.Lena"
+            elif(conf > 50 and conf<100): #undefined        
+                recognizer.update( np.array([roi]), np.array([Id]) ) 
+                recognizer.save(dbfilepath)
             elif(conf > 100): #undefined
                 Id="NEW"
-                # ts = int(time.time())
-                # recognizer.update( np.array([roi]), np.array([ts]) ) 
-                # recognizer.save(dbfilepath)
+                ts = int(time.time())
+                recognizer.update( np.array([roi]), np.array([ts]) ) 
+                recognizer.save(dbfilepath)
             # else:
             #     Id="??"        
             cv2.putText(img, str(Id) ,(x-20, y+20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,0,0),2, cv2.LINE_AA)

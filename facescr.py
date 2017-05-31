@@ -9,10 +9,11 @@ USAGE:
 
 # Python 2/3 compatibility
 from __future__ import print_function
-
+import math
 import numpy as np
 import cv2,os
 import time
+import glob 
 # local modules
 # from video import create_capture
 from common import clock, draw_str
@@ -21,11 +22,32 @@ from common import clock, draw_str
 from mss import mss
 from PIL import Image
 import io
+import shutil
+import sqlite3
+
 # http://answers.opencv.org/question/19763/storing-opencv-image-in-sqlite3-with-python/
+# https://stackoverflow.com/questions/13211745/detect-face-then-autocrop-pictures
 
-dbfilepath = "scrshut/trainner.yml"
-untitledpath = "scrshut/untitled/"
+dbSQLpath = "scrshut/db.sqlite"
+dbfilepath = "scrshut/known.yml"
+untitledpath = "scrshut/sugest/"
+dbfilepathunknown = "scrshut/unknown.yml"
 
+
+def get_profile(labelID):
+    sql="select * from records where labelID="+str(labelID)
+    rez=sqlDBConn.execute(sql)
+    data=None
+    for item in rez:
+        data=item
+    return data
+
+def add_profile(labelID,labelTitle):
+    if get_profile(labelID)==None:
+        sqlDBConn.execute('insert into records values (?,?)', [str(labelID),str(labelTitle)] )
+        sqlDBConn.commit()
+    return
+    
 def detect(img, cascade):
     rects = cascade.detectMultiScale(img, scaleFactor=1.3, minNeighbors=4, minSize=(30, 30),
                                      flags=cv2.CASCADE_SCALE_IMAGE)
@@ -37,6 +59,21 @@ def detect(img, cascade):
 def draw_rects(img, rects, color):
     for x1, y1, x2, y2 in rects:
         cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+
+def train_update(id):
+    path="%s%s/_*"%(untitledpath,str(id)) 
+    procesed=0 
+    for file in glob.glob(path):
+        pilImage=Image.open(file)
+        imageNp=np.array(pilImage,'uint8')
+        recognizer.update( [imageNp], np.array([id]) ) 
+        os.remove(file)
+        procesed=1
+    if procesed==1:
+        shutil.rmtree("%s%s/"%(untitledpath,str(id)))
+        # recognizer.save(dbfilepath)
+    return        
+
 
 if __name__ == '__main__':
     import sys, getopt
@@ -54,9 +91,10 @@ if __name__ == '__main__':
     cascade = cv2.CascadeClassifier(cascade_fn)
     nested = cv2.CascadeClassifier(nested_fn)
 
+    sqlDBConn = sqlite3.connect(dbSQLpath)
+
     mon = {'top': 100, 'left': 100, 'width': 200, 'height': 200}
     sct = mss()
-
 
     recognizer = cv2.face.createLBPHFaceRecognizer()
     if os.path.exists(dbfilepath):
@@ -66,6 +104,7 @@ if __name__ == '__main__':
         imageNp=np.array(pilImage,'uint8')
         recognizer.train( [imageNp], np.array([1]) ) 
         recognizer.save(dbfilepath)
+        add_profile(1,"face")
 
     
 
@@ -90,29 +129,38 @@ if __name__ == '__main__':
 
             cv2.imshow('facedetect2', roi)
             Id, conf = recognizer.predict(roi)
-            if(conf<50):
-                if(Id==1):
-                    Id="Andrii"
-                elif(Id==2):
-                    Id="Andrey"
-                elif(Id==4):
-                    Id="Yeva"
-                elif(Id==1496186763):
-                    Id="D.Serega"
-                elif(Id==1496186730):
-                    Id="M.Lena"
-            elif(conf > 50 and conf<100): #undefined        
-                recognizer.update( np.array([roi]), np.array([Id]) ) 
-                recognizer.save(dbfilepath)
-            elif(conf > 100): #undefined
-                Id="NEW"
+            user = get_profile(Id)
+
+            if(conf > 100): #undefined face
                 ts = int(time.time())
                 recognizer.update( np.array([roi]), np.array([ts]) ) 
                 recognizer.save(dbfilepath)
+                add_profile(ts,ts)
+            elif(conf > 70 and conf<90): #shugested, save for aprove
+                directory = untitledpath+str(Id)
+                fname=directory+"/%.0f.jpg" % conf
+                if not os.path.exists(fname):
+                    if not os.path.exists(directory):
+                        os.makedirs(directory)
+                    face=Image.fromarray(roi)
+                    face.save(fname)
+                train_update(Id)
+
+            # if(conf<50):
+
+            # elif(conf > 50 and conf<100): #undefined        
+            #     recognizer.update( np.array([roi]), np.array([Id]) ) 
+            #     recognizer.save(dbfilepath)
+            # elif(conf > 100): #undefined
+            #     Id="NEW"
+            #     ts = int(time.time())
+            #     recognizer.update( np.array([roi]), np.array([ts]) ) 
+            #     recognizer.save(dbfilepath)
             # else:
-            #     Id="??"        
-            cv2.putText(img, str(Id) ,(x-20, y+20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,0,0),2, cv2.LINE_AA)
-            cv2.putText(img, "%.1f" % conf ,(x-20, y), cv2.FONT_HERSHEY_SIMPLEX, 1,(200,0,0),2, cv2.LINE_AA)
+            #     Id="??"  
+
+            cv2.putText(img, 'None' if user==None else str(user[1]) ,(x-20, y+20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0),2, cv2.LINE_AA)
+            cv2.putText(img, "%.1f" % conf ,(x-20, y), cv2.FONT_HERSHEY_SIMPLEX, 1,(0,200,0),2, cv2.LINE_AA)
 
 
         # for(x,y,w,h) in faces:
@@ -145,3 +193,4 @@ if __name__ == '__main__':
             break
     cv2.destroyAllWindows()
     recognizer.save(dbfilepath)
+    sqlDBConn.close()

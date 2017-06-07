@@ -28,11 +28,10 @@ import sqlite3
 # http://answers.opencv.org/question/19763/storing-opencv-image-in-sqlite3-with-python/
 # https://stackoverflow.com/questions/13211745/detect-face-then-autocrop-pictures
 
-dbSQLpath = "scrshut/db.sqlite"
-dbfilepath = "scrshut/known.yml"
-untitledpath = "scrshut/sugest/"
-dbfilepathunknown = "scrshut/unknown.yml"
-
+dbSQLpath =      "scrshut/db.sqlite"
+untitledpath =   "scrshut/sugest/"
+rec_db_unknown = "scrshut/unknown.yml"
+rec_db_known =   "scrshut/known.yml"
 
 def get_profile(labelID):
     sql="select * from records where labelID="+str(labelID)
@@ -48,8 +47,8 @@ def add_profile(labelID,labelTitle):
         sqlDBConn.commit()
     return
     
-def detect(img, cascade):
-    rects = cascade.detectMultiScale(img, scaleFactor=1.3, minNeighbors=4, minSize=(30, 30),
+def detect(img, cascade): #1.3, 4
+    rects = cascade.detectMultiScale(img, scaleFactor=1.2, minNeighbors=5, minSize=(30, 30),
                                      flags=cv2.CASCADE_SCALE_IMAGE)
     if len(rects) == 0:
         return []
@@ -66,13 +65,36 @@ def train_update(id):
     for file in glob.glob(path):
         pilImage=Image.open(file)
         imageNp=np.array(pilImage,'uint8')
-        recognizer.update( [imageNp], np.array([id]) ) 
+        rec_unknown.update( [imageNp], np.array([id]) ) 
         os.remove(file)
         procesed=1
     if procesed==1:
         shutil.rmtree("%s%s/"%(untitledpath,str(id)))
-        # recognizer.save(dbfilepath)
+        # rec_unknown.save(rec_db_unknown)
     return        
+
+def init_rec_db(path):
+    rec = cv2.face.createLBPHFaceRecognizer()
+    if os.path.exists(path):
+        rec.load(path)
+    else:
+        pilImage=Image.open("scrshut/train.jpg").convert('L')
+        pilImage_np=np.array(pilImage,'uint8')
+        # gray = cv2.cvtColor(pilImage_np, cv2.COLOR_BGR2GRAY)
+        gray = cv2.equalizeHist(pilImage_np)
+        rects = detect(gray, cascade)
+        faces=[]
+        lbls=[]
+        for x, y, w, h in rects:
+            roi = gray[y:h, x:w]
+            faces.append(roi)
+            lbls.append(1)
+            # rec.update( np.array([roi]) , np.array([1]) ) 
+            # cv2.imshow('facedetect='+str(x), roi)
+        rec.train(faces, np.array(lbls))
+        rec.save(path)
+        add_profile(1,"face")
+    return  rec
 
 
 if __name__ == '__main__':
@@ -93,18 +115,32 @@ if __name__ == '__main__':
 
     sqlDBConn = sqlite3.connect(dbSQLpath)
 
-    mon = {'top': 100, 'left': 100, 'width': 200, 'height': 200}
+    mon = {'top': 100, 'left': 100, 'width': 400, 'height': 300}
     sct = mss()
 
-    recognizer = cv2.face.createLBPHFaceRecognizer()
-    if os.path.exists(dbfilepath):
-        recognizer.load(dbfilepath)
-    else:
-        pilImage=Image.open("scrshut/rootimg.jpg").convert('L')
-        imageNp=np.array(pilImage,'uint8')
-        recognizer.train( [imageNp], np.array([1]) ) 
-        recognizer.save(dbfilepath)
-        add_profile(1,"face")
+    rec_unknown = init_rec_db(rec_db_unknown)
+    rec_known = init_rec_db(rec_db_known)
+
+
+    # rec_unknown = cv2.face.createLBPHFaceRecognizer()
+    # if os.path.exists(rec_db_unknown):
+    #     rec_unknown.load(rec_db_unknown)
+    # else:
+    #     pilImage=Image.open("scrshut/rootimg.jpg").convert('L')
+    #     imageNp=np.array(pilImage,'uint8')
+    #     rec_unknown.train( [imageNp], np.array([1]) ) 
+    #     rec_unknown.save(rec_db_unknown)
+    #     add_profile(1,"face")
+
+    # rec_known = cv2.face.createLBPHFaceRecognizer()
+    # if os.path.exists(rec_db_known):
+    #     rec_unknown.load(rec_db_known)
+    # else:
+    #     pilImage=Image.open("scrshut/rootimg.jpg").convert('L')
+    #     imageNp=np.array(pilImage,'uint8')
+    #     rec_unknown.train( [imageNp], np.array([1]) ) 
+    #     rec_unknown.save(rec_db_known)
+    #     add_profile(1,"face")
 
     
 
@@ -127,35 +163,61 @@ if __name__ == '__main__':
             # subrects = detect(roi.copy(), cascade)
             # draw_rects(vis_roi, subrects, (255, 0, 0))
 
-            cv2.imshow('facedetect2', roi)
-            Id, conf = recognizer.predict(roi)
-            user = get_profile(Id)
+            user = None
 
-            if(conf > 100): #undefined face
-                ts = int(time.time())
-                recognizer.update( np.array([roi]), np.array([ts]) ) 
-                recognizer.save(dbfilepath)
-                add_profile(ts,ts)
-            elif(conf > 70 and conf<90): #shugested, save for aprove
-                directory = untitledpath+str(Id)
-                fname=directory+"/%.0f.jpg" % conf
-                if not os.path.exists(fname):
-                    if not os.path.exists(directory):
-                        os.makedirs(directory)
-                    face=Image.fromarray(roi)
-                    face.save(fname)
-                train_update(Id)
+            # cv2.imshow('face', roi) #active face !!FOR ONE FACE PER PIC
+            true_id, conf = rec_known.predict(roi)
+
+            if conf < 50: #known face
+                user = get_profile(true_id)
+            else:   #search in sugestions
+                Id, conf = rec_unknown.predict(roi)
+                user = get_profile(Id)
+                if conf < 50:
+                    rec_known.update( np.array([roi]), np.array([Id])) 
+                    rec_known.save(rec_db_known)
+                elif(conf > 100): #undefined
+                    isnewface=raw_input('new face? y|n: ')
+                    if isnewface == "y":
+                        ts = int(time.time())
+                        rec_unknown.update( np.array([roi]), np.array([ts]) ) 
+                        rec_unknown.save(rec_db_unknown)
+                        add_profile(ts,ts)
+                else : # request for train
+                    isnupdate=raw_input( "is this '%s' %.1f ?  y|n:"%(('None' if user==None else str(user[1]) ) ,conf) )
+                    if isnupdate == "y":
+                        rec_unknown.update( np.array([roi]), np.array([Id]) ) 
+                        rec_unknown.save(rec_db_unknown)
+
+            
+                    
+            # if(conf > 100): #undefined face
+            #     isnewface=raw_input('new face? y|n: ')
+            #     if isnewface == "y":
+            #         ts = int(time.time())
+            #         rec_unknown.update( np.array([roi]), np.array([ts]) ) 
+            #         rec_unknown.save(rec_db_unknown)
+            #         add_profile(ts,ts)
+            # elif(conf > 70 and conf<90): #shugested, save for aprove
+            #     directory = untitledpath+str(Id)
+            #     fname=directory+"/%.0f.jpg" % conf
+            #     if not os.path.exists(fname):
+            #         if not os.path.exists(directory):
+            #             os.makedirs(directory)
+            #         face=Image.fromarray(roi)
+            #         face.save(fname)
+            #     train_update(Id)
 
             # if(conf<50):
 
             # elif(conf > 50 and conf<100): #undefined        
-            #     recognizer.update( np.array([roi]), np.array([Id]) ) 
-            #     recognizer.save(dbfilepath)
+            #     rec_unknown.update( np.array([roi]), np.array([Id]) ) 
+            #     rec_unknown.save(rec_db_unknown)
             # elif(conf > 100): #undefined
             #     Id="NEW"
             #     ts = int(time.time())
-            #     recognizer.update( np.array([roi]), np.array([ts]) ) 
-            #     recognizer.save(dbfilepath)
+            #     rec_unknown.update( np.array([roi]), np.array([ts]) ) 
+            #     rec_unknown.save(rec_db_unknown)
             # else:
             #     Id="??"  
 
@@ -165,7 +227,7 @@ if __name__ == '__main__':
 
         # for(x,y,w,h) in faces:
         #     cv2.rectangle(im,(x,y),(x+w,y+h),(225,0,0),2)
-        #     Id, conf = recognizer.predict(gray[y:y+h,x:x+w])
+        #     Id, conf = rec_unknown.predict(gray[y:y+h,x:x+w])
         #     if(conf<50):
         #         if(Id==1):
         #             Id="Andrii"
@@ -191,6 +253,9 @@ if __name__ == '__main__':
 
         if cv2.waitKey(5) == 27:
             break
+# exit
     cv2.destroyAllWindows()
-    recognizer.save(dbfilepath)
+    rec_unknown.save(rec_db_unknown)
+    rec_known.save(rec_db_known)
     sqlDBConn.close()
+
